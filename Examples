@@ -1,0 +1,892 @@
+Nice project that build Jenkins with 1 node on AWS  (CloudGuru)
+
+https://github.com/linuxacademy/content-deploying-to-aws-ansible-terraform/tree/master/terraform_v13_compatible_code
+
+
+backend.tf   (change the bucket name)
+/> aws s3api create-bucket --bucket mybucket1144
+
+
+
+variable.tf (change the dns-name default)     -  "cmcloudlab788.info."
+/> aws route53 list-hosted-zoned | jq -r .HostedZones[].Name | e grep "cmcloud*"
+
+
+/> ssh-keygen -t rsa
+
+
+
+/> terraform init                                                               ignore the errors
+/> terraform fmt
+/> terraform validate
+/> terraform plan
+/> terraform apply
+
+
+
+
+
+
+
+
+x=terraform
+$x init/plan/apply
+
+https://askubuntu.com/questions/983351/how-to-install-terraform-in-ubuntu
+https://registry.terraform.io/browse/providers
+https://registry.terraform.io/providers/hashicorp/aws/latest/docs
+https://registry.terraform.io/providers/hashicorp/aws/latest/docs
+
+/> sudo apt-get install unzip       https://releases.hashicorp.com/terraform/1.0.1/terraform_1.0.1_linux_amd64.zip
+https://www.terraform.io/downloads.html     (check the latest version)
+/> wget https://releases.hashicorp.com/terraform/1.0.1/terraform_1.0.1_linux_amd64.zip
+/> unzip terraform_1.0.1_linux_amd64.zip
+/> sudo mv terraform /usr/local/bin
+/> terraform --version
+
+/> t init
+/> t plan
+/> t apply
+
+/> cd terraform
+/> vim credentials       (in order to work with credentials remove the keys first: cd ~/.aws)
+Usage:provider “aws” {
+ assume_role {
+ role_arn = “arn:aws:iam::317413990831:role/Administrator”
+ session_name = “SESSION_NAME”
+ external_id = “EXTERNAL_ID”
+ }
+}
+
+/> vim provider.tf
+
+provider aws {
+    region = var.AWS_REGION
+}
+
+
+provider aws {
+    region = "${var.AWS_REGION}"
+}
+
+/> vim vars.tf
+variable "AWS_REGION" {
+    default = "us-east-2"
+}
+
+
+** you can also create network.tf
+main file is main.tf
+================================================================================
+
+create an ECS cluster:
+
+/> vim main.tf
+resource "aws_ecs_cluster" "foo" {
+  name = "white-hart"
+}
+
+/> terraform destroy -target=aws_ecs_cluster.foo
+
+
+
+------------------------------------------------------------------Create EC2 + IP with exist VPC and destroy multiple resources
+resource "aws_instance" "example" {
+  ami           = "ami-0b59f7abff81a9ab2"
+  instance_type = "t2.micro"
+  key_name = "newkipi"
+
+  subnet_id = "subnet-c5aeafbf"
+  vpc_security_group_ids = ["sg-0a0e179896526d5b0"]
+
+  tags = {
+    Name ="test"
+  }
+}
+
+resource "aws_eip" "ip" {
+    vpc = true
+    instance = aws_instance.example.id
+}
+
+/> terraform destroy -target=aws_instance.example; aws_eip.ip
+
+-------------------------------------------------------------------Create EC2 with public_ip as an OUTPUT
+
+
+
+resource "aws_instance" "example" {
+  ami           = "ami-0b59f7abff81a9ab2"
+  instance_type = "t2.micro"
+  key_name = "newkipi"
+
+  subnet_id = "subnet-c5aeafbf"
+  vpc_security_group_ids = ["sg-0a0e179896526d5b0"]
+
+  tags = {
+    Name ="test"
+  }
+}
+
+output "public_ips" {
+description = "List of private IP addresses assigned to the DB and APP instances"
+value       = [aws_instance.example.*.public_ip]
+}
+
+output "private_ips" {
+description = "List of private IP addresses assigned to the DB and APP instances"
+value       = [aws_instance.example.*.private_ip]
+}
+
+** validation command:
+/> terraform validate main.tf -json
+--------------------------------------------------------------------------------create s3
+/> vim s3.tf
+provider aws {
+  region = "us-east-2"
+}
+
+/> vim main.tf
+resource "aws_s3_bucket" "my_f_bucket"  {
+  bucket = "nirr-fdf"
+}
+
+/> t init
+/> t apply
+/> t destroy -target=aws_s3_bucket.my_f_bucket
+
+--------------------------------------------------------------------------------Create vpc with 2 subnets (1 public and one private)
+
+https://www.mitrais.com/news-updates/infrastructure-as-code-using-terraform-creating-an-aws-virtual-private-cloud/
+
+/> provider.tf
+
+provider aws {
+  region = "us-east-2"
+}
+
+
+/> main.tf
+
+resource "aws_vpc" "development" { #1
+  cidr_block = "10.0.0.0/16" #2
+
+  tags = {
+    Environment = "development" #3
+  }
+}
+
+
+resource "aws_subnet" "private" { #1
+  vpc_id     = aws_vpc.development.id #2
+  cidr_block = "10.0.1.0/24" #3
+
+  tags = {
+    Environment = "development"
+    Access = "private"
+  }
+}
+
+resource "aws_subnet" "public" {
+  vpc_id     = aws_vpc.development.id
+  cidr_block = "10.0.2.0/24"
+
+  tags = {
+    Environment = "development"
+    Access = "public"
+  }
+}
+
+resource "aws_internet_gateway" "igw" { #1
+  vpc_id = aws_vpc.development.id
+
+  tags = {
+    Environment = "development"
+  }
+}
+
+
+
+resource "aws_route_table" "public" { #2
+  vpc_id = aws_vpc.development.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.igw.id
+  }
+  tags = {
+    Environment = "development"
+  }
+}
+
+resource "aws_route_table_association" "public" { #3
+  subnet_id      = aws_subnet.public.id
+  route_table_id = aws_route_table.public.id
+}
+
+resource "aws_eip" "nat" { #1
+  vpc      = true
+}
+
+resource "aws_nat_gateway" "ngw" { #2
+  allocation_id = aws_eip.nat.id #3
+  subnet_id = aws_subnet.public.id #4
+}
+
+resource "aws_route_table" "private" { #5
+  vpc_id = aws_vpc.development.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.ngw.id #6
+  }
+
+  tags = {
+    Environment = "development"
+  }
+}
+
+resource "aws_route_table_association" "private" { #7
+  subnet_id = aws_subnet.private.id
+  route_table_id = aws_route_table.private.id
+}
+
+
+-------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+provider "aws" {
+    region = "us-east-2"
+    version = "~> 2.0"
+}                                                                               This one is the default
+
+provider "aws" {
+    alias = "aws.virginia"
+    region = "us-east-1"
+}
+
+resource "aws_s3_bucket" "virginia_bucket" {
+    provider = "aws.aws.virginia"
+    bucket = ""
+}
+
+resource "aws_s3_bucket" "default" {
+    provider = "aws.aws.virginia"
+    bucket = ""
+}
+
+--------------------------------------------------------------------------------
+https://registry.terraform.io/providers/hashicorp/aws/latest/docs
+
+
+
+
+Terraform:
+
+
+Great source codes for terraform!
+https://github.com/futurice/terraform-examples
+https://github.com/futurice/terraform-examples
+https://github.com/terraform-aws-modules/terraform-aws-vpc
+https://github.com/terraform-aws-modules/terraform-aws-vpc
+================================================================================
+vpc
+https://brad-simonin.medium.com/create-an-aws-vpc-and-subnet-using-terraform-d3bddcbbcb6
+
+
+
+This one works!
+
+
+resource "aws_key_pair" "ssh-key" {
+  key_name   = "ssh-key"
+  public_key = file("~/.ssh/id_rsa.pub")
+}
+
+resource "aws_instance" "example" {
+  ami           = "ami-077e31c4939f6a2f3"
+  instance_type = "t2.micro"
+  key_name = "ssh-key"
+
+  subnet_id = "subnet-c5aeafbf"
+  vpc_security_group_ids = ["sg-0a0e179896526d5b0"]
+
+  tags = {
+    Name ="backend"
+  }
+}
+
+
+/>  ssh ec2-user@3.133.98.193
+/> terraform destroy -target=aws_instance.example            (you must be in the right folder)
+
+
+
+--------------------------------------------------------------------------------
+
+
+resource "aws_key_pair" "ssh-key" {
+  key_name   = "ssh-key"
+  public_key = file("~/.ssh/id_rsa.pub")
+}
+
+resource "aws_instance" "example" {
+  ami           = "ami-077e31c4939f6a2f3"
+  instance_type = "t2.micro"
+  key_name = "ssh-key"
+
+  subnet_id = "subnet-c5aeafbf"
+  vpc_security_group_ids = ["sg-0a0e179896526d5b0"]
+
+  tags = {
+    Name ="backend"
+  }
+}
+
+resource "aws_eip" "ip" {
+    vpc = true
+    instance = aws_instance.example.id
+}
+
+output "public_ip" {
+  description = "Contains the public IP address"
+  value       = aws_eip.default.public_ip
+}
+
+
+# Define an Ansible var_file containing Terraform variable values
+data "template_file" "tf_ansible_vars_file" {
+  template = aws_eip.default.public_ip
+  vars = {
+    share_location = "ip.txt"
+    # gitlab_backup_bucket_name = aws_s3_bucket.gitlab_backup.bucket
+  }
+}
+
+
+
+
+
+
+
+# generate inventory file for Ansible
+resource "local_file" "hosts_cfg" {
+  content = templatefile("${path.module}/templates/hosts.tpl",
+    {
+      backend = aws_eip.default.public_ip
+    }
+  )
+  filename = "/etc/ansible/hosts"
+}
+
+data "template_file" "ansible_inventory" {
+  template = "${file("${path.module}/hosts.tmpl")}"
+
+  vars = {
+    public_ips = "${join("\n", aws_instance.public_instance.*.public_ip)}"
+  }
+}
+
+resource "local_file" "hosts" {
+  filename = "${path.module}/hosts"
+
+  content = data.template_file.ansible_inventory.rendered
+}
+
+
+
+
+
+resource "aws_instance" "example" {
+  ami           = "ami-0b59f7abff81a9ab2"
+  instance_type = "t2.micro"
+  key_name = "newkipi"
+
+  subnet_id = "subnet-c5aeafbf"
+  vpc_security_group_ids = ["sg-0a0e179896526d5b0"]
+
+  tags = {
+    Name ="backend"
+  }
+}
+
+resource "aws_eip" "ip" {
+    vpc = true
+    instance = aws_instance.example.id
+}
+
+/> terraform destroy -target=aws_instance.example; aws_eip.ip
+
+--------------
+resource "aws_instance" "example" {
+  ami           = "ami-077e31c4939f6a2f3"
+  instance_type = "t2.micro"
+  key_name = "newkipi"
+
+  subnet_id = "subnet-c5aeafbf"
+  vpc_security_group_ids = ["sg-0a0e179896526d5b0"]
+
+  tags = {
+    Name ="backend"
+  }
+}
+
+
+output "public_ip" {
+  description = "List of public IP addresses assigned to the instances, if applicable"
+  value       = aws_instance.example.*.public_ip
+}
+
+https://stackoverflow.com/questions/59708577/can-i-do-ssh-into-my-ec2-instance-created-by-terraform
+https://www.digitalocean.com/community/tutorials/how-to-use-ansible-with-terraform-for-configuration-management
+https://www.digitalocean.com/community/tutorials/how-to-use-ansible-with-terraform-for-configuration-management
+
+/> terraform destroy -target=aws_instance.example;
+
+
+https://github.com/terraform-aws-modules/terraform-aws-ec2-instance/blob/master/outputs.tf
+--------------------------------------------------------------------------------
+
+provider "aws" {
+  region = "us-east-2"
+  }
+  resource "aws_instance" "example" {
+  ami           = "ami-0c55b159cbfafe1f0"
+  instance_type = "t2.micro"
+  }
+----------------------------------------------------- EC2 instance with userdata
+
+resource "aws_instance" "app" {
+  instance_type     = "t2.micro"
+  availability_zone = "us-east-2a"
+  ami               = "ami-0c55b159cbfafe1f0"
+  key_name = "newkipi"
+  user_data = <<-EOF
+              #!/bin/bash
+              sudo mkdir /aaa
+              EOF
+  }
+--------------------------------------------------------------------------------
+resource "aws_instance" "example" {
+  ami                    = "ami-0c55b159cbfafe1f0"
+  instance_type          = "t2.micro"
+  vpc_security_group_ids = [aws_security_group.instance.id]
+
+  user_data = <<-EOF
+              #!/bin/bash
+              echo "Hello, World" > /var/www/index.html
+              nohup busybox httpd -f -p 8080 &
+              EOF
+
+  tags = {
+    Name = "terraform-example"
+  }
+}
+
+--------------------------------------------------------------------------------
+
+
+
+https://www.linkbynet.com/produce-an-ansible-inventory-with-terraform
+https://www.linkbynet.com/produce-an-ansible-inventory-with-terraform
+
+
+### The bastion
+resource "aws_instance" "bastion" {
+ ami = "ami-0b59f7abff81a9ab2"
+ availability_zone = var.az
+ instance_type = "t2.micro"
+ key_name = var.ssh-key
+ vpc_security_group_ids = ["sg-0a0e179896526d5b0"]
+ subnet_id = "subnet-c5aeafbf"
+
+ tags = {
+  Name = "Bastion"
+  Projet = var.projet
+  Application = var.Application
+ }
+
+ volume_tags = {
+  Name = "Bastion"
+  Projet = var.projet
+  Application = var.Application
+ }
+
+ root_block_device {
+   volume_size = 8
+  }
+}
+
+### The Elastic IP for the Bastion
+resource "aws_eip" "eip-bastion" {
+ vpc = true
+ instance = aws_instance.bastion.id
+ associate_with_private_ip = aws_instance.bastion.private_ip
+
+ tags = {
+  Name = "bastion"
+  Projet = var.projet
+  Application = var.Application
+ }
+}
+
+### The private instances
+resource "aws_instance" "i-private" {
+ ami = "ami-0b59f7abff81a9ab2"
+ availability_zone = var.az
+ instance_type = var.ec2_type
+ key_name = var.ssh-key
+ vpc_security_group_ids = [aws_security_group.sg-private.id]
+ subnet_id = aws_subnet.private.id
+
+ tags = {
+  Name = "i-private"
+  Projet = var.projet
+  Application = var.Application
+ }
+
+ volume_tags = {
+  Name = "i-private"
+  Projet = var.projet
+  Application = var.Application
+ }
+
+ root_block_device {
+   volume_size = 8
+  }
+
+ ebs_block_device {
+  device_name = "/dev/sdb"
+  volume_type = var.ebs_type
+  volume_size = 8
+ }
+
+ count = var.ec2_nb
+}
+
+
+
+-----------------------------------------------
+
+
+Use Terraform version constraints in a collaborative environment to ensure that everyone is using a specific Terraform version, or using at least a minimum Terraform version that has behavior expected by the configuration.
+
+
+terraform {
+  required_providers {
+    aws = {
+      version = ">= 2.7.0"
+      source = "hashicorp/aws"
+    }
+  }
+}
+
+
+
+init.tf     example       (https://github.com/futurice/terraform-examples/blob/master/aws/static_website_ssl_cloudfront_private_s3/init.tf)
+
+
+provider "aws" {
+  region  = var.region
+  version = "~> 2.0"
+}
+
+
+** ** ** ** **   # comment
+
+--------------------------------------------------------------------------------
+init.tf
+
+provider "aws" {
+  region = "us-east-2"
+  }
+
+main.tf
+
+resource "aws_instance" "example" {
+  ami           = "ami-0b9064170e32bde34" #"ami-0d8d212151031f51c"
+  instance_type = "t2.micro"
+  #key_name = "newkipi"
+
+  tags = {
+    Name ="backend"
+  }
+}
+
+resource "aws_eip" "ip" {
+  vpc = true
+  instance = aws_instance.example.id
+}
+
+/> terraform destroy -target=aws_instance.example; aws_eip.ip
+
+--------------------------------------------------------------------------------
+
+terraform.tfstate.backup:
+The state file is used by Terraform to keep track of resources and metadata information about your infrastructure
+
+
+
+
+resource "aws_default_vpc" "default" {
+  tags = {
+    Name = "default"
+  }
+}
+
+
+resource "aws_subnet" "main" {
+  vpc_id     = aws_default_vpc.default.id
+
+  tags = {
+    Name = "main"
+  }
+}
+
+resource "aws_instance" "example" {
+  ami           = "ami-0d8d212151031f51c"
+  instance_type = "t2.micro"
+  key_name = "newkipi"
+  subnet_id = aws_subnet.main.id
+  tags = {
+    Name ="backend"
+  }
+}
+
+https://github.com/antonputra/tutorials/blob/main/lessons/020/main.tf
+https://github.com/antonputra/tutorials/blob/main/lessons/020/main.tf
+
+
+
+resource "aws_subnet" "subnet1" {
+    availability_zone = "us-east-2a"
+    vpc_id = aws_default_vpc.default.id
+}
+
+resource "aws_instance" "example" {
+  ami           = "ami-0d8d212151031f51c"
+  instance_type = "t2.micro"
+  key_name = "newkipi"
+  subnet_id = aws_subnet.subnet1.id
+  tags = {
+    Name ="backend"
+  }
+}
+resource "aws_default_vpc" "default" {
+  tags = {
+    Name = "default"
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+resource "aws_instance" "example" {
+  ami           = "ami-0d8d212151031f51c"
+  instance_type = "t2.micro"
+  key_name = "newkipi"
+  subnet_id = aws_subnet.default_azs.id
+  tags = {
+    Name ="backend"
+  }
+}
+
+
+
+
+********************************************************
+
+resource "aws_instance" "example" {
+   ami =                     "${lookup(var.AMIS, var.AWS_REGION)}"
+   instance_type =           "t2.micro"
+   subnet_id =               "{aws_subnet.main-public-1.id}"
+   vpc_security_group_ids =  ["${aws_security_group.allow-ssh.id}"]
+   key_name =                "${aws_key_pair.mykeypaor.key_name}"
+
+
+
+
+resource "aws_instance" "example" {
+  ami =                     "${lookup(var.AMIS, var.AWS_REGION)}"
+  instance_type =           "t2.micro"
+  subnet_id =               "{aws_default_subnet.default_az3.id}"
+  #vpc_security_group_ids =  ["${aws_security_group.allow-ssh.id}"]
+  key_name =                newkipi
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  vpc.tf
+
+resource "aws_vpc" "main" {
+
+   cidr_block = "10.0.0.0/16"
+   instance_tenancy = "default"
+   enable_dns_support = "true"
+   enable_dns_hostnames = "true"
+   enable_classiclink = "false"
+   tags {
+          name = "main"
+   }
+}
+
+
+
+
+
+
+# Internet VPC
+resource "aws_vpc" "main" {
+  cidr_block           = "10.0.0.0/16"
+  instance_tenancy     = "default"
+  enable_dns_support   = "true"
+  enable_dns_hostnames = "true"
+  enable_classiclink   = "false"
+  tags = {
+    Name = "main"
+  }
+}
+
+# Subnets
+resource "aws_subnet" "main-public-1" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.1.0/24"
+  map_public_ip_on_launch = "true"
+  availability_zone       = "us-east-2a"
+
+  tags = {
+    Name = "main-public-1"
+  }
+}
+
+resource "aws_subnet" "main-public-2" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.2.0/24"
+  map_public_ip_on_launch = "true"
+  availability_zone       = "us-east-2b"
+
+  tags = {
+    Name = "main-public-2"
+  }
+}
+
+resource "aws_subnet" "main-public-3" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.3.0/24"
+  map_public_ip_on_launch = "true"
+  availability_zone       = us-east-2c"
+
+  tags = {
+    Name = "main-public-3"
+  }
+}
+
+resource "aws_subnet" "main-private-1" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.4.0/24"
+  map_public_ip_on_launch = "false"
+  availability_zone       = "us-east-2a"
+
+  tags = {
+    Name = "main-private-1"
+  }
+}
+
+resource "aws_subnet" "main-private-2" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.5.0/24"
+  map_public_ip_on_launch = "false"
+  availability_zone       = "us-east-2b"
+
+  tags = {
+    Name = "main-private-2"
+  }
+}
+
+resource "aws_subnet" "main-private-3" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.6.0/24"
+  map_public_ip_on_launch = "false"
+  availability_zone       = "us-east-2c"
+
+  tags = {
+    Name = "main-private-3"
+  }
+}
+
+# Internet GW
+resource "aws_internet_gateway" "main-gw" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name = "main"
+  }
+}
+
+# route tables
+resource "aws_route_table" "main-public" {
+  vpc_id = aws_vpc.main.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.main-gw.id
+  }
+
+  tags = {
+    Name = "main-public-1"
+  }
+}
+
+# route associations public
+resource "aws_route_table_association" "main-public-1-a" {
+  subnet_id      = aws_subnet.main-public-1.id
+  route_table_id = aws_route_table.main-public.id
+}
+
+resource "aws_route_table_association" "main-public-2-a" {
+  subnet_id      = aws_subnet.main-public-2.id
+  route_table_id = aws_route_table.main-public.id
+}
+
+resource "aws_route_table_association" "main-public-3-a" {
+  subnet_id      = aws_subnet.main-public-3.id
+  route_table_id = aws_route_table.main-public.id
+}
+
+
+
+
+
+
+
