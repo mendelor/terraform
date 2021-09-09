@@ -1,0 +1,20 @@
+provider.tf: 
+
+provider "aws" {
+  region  = "us-east-2"
+  profile = "default"
+  alias = "aws-east-2"
+}
+
+
+main.tf: 
+resource "aws_vpc" "vpc_us-east-2" {
+   provider = aws.aws-east-2
+   cidr_block = "10.2.0.0/16"
+   enable_dns_hostnames = "true"
+   tags = {
+      "Name" = "vpc-1"
+   }
+}
+
+t init,  t validate,  t plan,  t apply 
