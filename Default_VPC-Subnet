@@ -1,0 +1,127 @@
+
+#vim c3-vpc.tf: 
+
+resource "aws_default_vpc" "default" {
+  tags = {
+    Name = "Default VPC"
+  }
+}
+
+
+/> terraform import aws_default_vpc.default <vpc-id>
+
+
+
+#vim c6-subnet.tf: 
+
+
+resource "aws_default_subnet" "default" {
+  tags = {
+    Name = "Default subnet"
+  }
+}
+
+
+/> terraform import aws_default_subnet.default <subnet-id>
+
+
+
+#vim ec2.tf: 
+
+resource "aws_instance" "myec2vm" {
+  ami = data.aws_ami.amzlinux2.id
+  instance_type = "t2.nano"
+  key_name = "ED*****"
+  subnet_id = "subnet-a717"
+}
+
+
+#vim version.tf: 
+
+terraform {
+  required_version = "~> 1.0.5" # which means any version equal & above 0.14 like 0.15, 0.16 etc and < 1.xx
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 3.0"
+    }
+  }
+}
+
+# Provider Block
+provider "aws" {
+  region  = var.aws_region
+  profile = "default"
+}
+
+
+
+#vim c2-generic-variables.tf: 
+
+# Input Variables
+
+# AWS Region
+variable "aws_region" {
+  description = "Region in which AWS Resources to be created"
+  type = string
+  default = "ap-southeast-2"
+}
+
+
+
+#vim c4-ami-datasource.tf
+
+
+data "aws_ami" "amzlinux2" {
+  most_recent      = true
+  owners           = ["amazon"]
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-hvm-*-gp2"]
+  }
+  filter {
+    name   = "root-device-type"
+    values = ["ebs"]
+  }
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+  filter {
+    name   = "architecture"
+    values = ["x86_64"]
+  }
+}
+
+
+
+# vim  ec2securitygroups.tf
+
+
+to_port     = 80
+protocol    = "tcp"
+cidr_blocks = ["0.0.0.0/0"]
+}
+ingress {
+description = "Allow Port 443"
+from_port   = 443
+to_port     = 443
+protocol    = "tcp"
+cidr_blocks = ["0.0.0.0/0"]
+}
+egress {
+description = "Allow all ip and ports outbound"
+from_port   = 0
+to_port     = 0
+protocol    = "-1"
+cidr_blocks = ["0.0.0.0/0"]
+}
+
+tags = {
+Name = "vpc-web"
+}
+}
+
+
+https://github.com/stacksimplify/terraform-on-aws-ec2/tree/main/04-Terraform-Variables-and-Datasources/terraform-manifests
+https://github.com/stacksimplify/terraform-on-aws-ec2/tree/main/04-Terraform-Variables-and-Datasources/terraform-manifests
