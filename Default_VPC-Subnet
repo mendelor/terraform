@@ -122,6 +122,6 @@ Name = "vpc-web"
 }
 }
 
-
+https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/default_vpc
 https://github.com/stacksimplify/terraform-on-aws-ec2/tree/main/04-Terraform-Variables-and-Datasources/terraform-manifests
 https://github.com/stacksimplify/terraform-on-aws-ec2/tree/main/04-Terraform-Variables-and-Datasources/terraform-manifests
